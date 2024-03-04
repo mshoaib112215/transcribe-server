@@ -241,6 +241,8 @@ def upload():
         filename = secure_filename(file.filename)
 
         target_path = "./temps2"
+        if(os.path.exists(target_path) == False):
+            os.mkdir(target_path)
         file_path = os.path.join(target_path, filename)
 
         # Check if a file with the same name already exists
@@ -250,7 +252,6 @@ def upload():
             filename = secure_filename(file.filename)
             file.save(os.path.join("./temps2", filename))
             send_message("message","File saved successfully")
-    
 
     # return jsonify({"message": "file saved successfully"}), 200
     # Get other form fields
@@ -333,6 +334,8 @@ def upload():
         print(captured_time , " " , timestamp, " ", starting_timestamp, " ", timeStampsType)
         # return jsonify({"message": "file saved successfully"}), 200
         print(starting_timestamp)
+        if os.path.exists('./temps') == False:
+            os.mkdir("./temps")
         chunk_path = f"./temps/{file_name}_trimmed_{str(uuid.uuid3(uuid.NAMESPACE_OID, str(key)))}.wav"
         ffmpeg_command = [
             "ffmpeg",
