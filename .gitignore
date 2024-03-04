@@ -1,0 +1,9 @@
+node_modules
+__pycache__
+sio.py
+socketio_sample.py
+upload.py
+whisper_sample.py
+pdfjs
+/temps/*
+/temps2/*
