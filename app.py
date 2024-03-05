@@ -44,6 +44,8 @@ def convert_blob_to_wav(blob):
 
 def send_transcription(result):
     socketio.emit("transcription_update", {"transcription": result})
+def scroll_update(result):
+    socketio.emit("scroll_update", {"result": result})
 
 
 def transcribe_audio(chunk_path, file_name):
@@ -375,7 +377,65 @@ def upload():
 
     return jsonify({"message": "File uploaded successfully"}), 200  
 
+@socketio.on("scroll-to-text")
+def scroll_to_text(data):
+    current_time = data['current_time']
+    audio_duration = data['audio_duration']
+    temp_file_path = "./temps2/20_second.mp3"
 
+    current_time = float(current_time)
+    audio_duration = float(audio_duration)
+    # with open(temp_file_path, "wb") as temp_file:
+    #     temp_file.write(file_content_base64)
+
+    # Do something with the temporary file...
+    # print(f"File saved to {temp_file_path}")
+    # total_duration = timestamp_to_seconds(audio_duration)
+    # print(time_stamps)
+    while current_time <= audio_duration:
+
+        starting_timestamp = 0
+
+        if os.path.exists('./temps') == False:
+            os.mkdir("./temps")
+        chunk_path = f"./temps/{"20_second.mp3"}_trimmed_{str(uuid.uuid3(uuid.NAMESPACE_OID, str(12)))}.wav"
+        ffmpeg_command = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            temp_file_path,
+            "-ss",
+            starting_timestamp,  # Start time in seconds
+            "-t",
+            60,  # Duration in seconds
+            "-c",
+            "copy",
+            chunk_path,
+        ]
+
+        result = subprocess.run(ffmpeg_command, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"Error during trimming: {result.stderr}")
+            # Handle the error as needed
+
+        send_message("message", "in the transcripting")
+
+        model = whisper.load_model("base")
+        print(chunk_path)
+        audio_path = os.path.abspath(chunk_path)
+
+        try:
+            result = model.transcribe(audio_path)
+            print(result)
+            send_message("result",result)
+            socketio.start_background_task(target=scroll_update, result=result)
+
+        except Exception as e:
+            print(f"Error during transcription: {e}")
+        finally:
+            os.remove(chunk_path)
+
+    return jsonify({"message": "File uploaded successfully"}), 200 
 @app.route("/transcribe", methods=["POST"])
 def transcribe_audio_api():
     if "file" not in request.files:
