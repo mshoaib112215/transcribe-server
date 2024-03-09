@@ -453,6 +453,29 @@ def transcribe_audio_api():
     os.remove(wav_file_path)
     return jsonify(result)
 
+@app.route("/store-audio", methods=["POST"])
+def store_audio():
+    if "file" in request.files:
+        file = request.files["file"]
+        if file.filename == "":
+            return jsonify({"error": "No selected file"}), 400
+
+        filename = secure_filename(file.filename)
+
+        target_path = "./temps2"
+
+        if os.path.exists(target_path) == False:
+            os.mkdir(target_path)
+        file_path = os.path.join(target_path, filename)
+
+        # Check if a file with the same name already exists
+        if os.path.exists(file_path):
+            send_message("message", "File already exists")
+        else:
+            filename = secure_filename(file.filename)
+            file.save(os.path.join("./temps2", filename))
+            send_message("message", "File saved successfully")
+            return jsonify({"message": "File saved successfully"}), 200
 
 def run_socketio():
     print("Initializing SocketIO server...")
