@@ -459,7 +459,7 @@ def store_audio():
         file = request.files["file"]
         if file.filename == "":
             return jsonify({"error": "No selected file"}), 400
-
+        print(file.filename)
         filename = secure_filename(file.filename)
 
         target_path = "./temps2"
