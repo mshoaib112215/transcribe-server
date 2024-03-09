@@ -381,33 +381,29 @@ def upload():
 def scroll_to_text(data):
     current_time = data['current_time']
     audio_duration = data['audio_duration']
-    temp_file_path = "./temps2/20_second.mp3"
-
+    file_name = data['file_name']
+    file_name = file_name.replace(" ", "_")
+    temp_file_path = "./temps2/" + file_name
+    audio_length = 30;
     current_time = float(current_time)
     audio_duration = float(audio_duration)
-    # with open(temp_file_path, "wb") as temp_file:
-    #     temp_file.write(file_content_base64)
+    while True:
 
-    # Do something with the temporary file...
-    # print(f"File saved to {temp_file_path}")
-    # total_duration = timestamp_to_seconds(audio_duration)
-    # print(time_stamps)
-    while current_time <= audio_duration:
-
-        starting_timestamp = 0
+        print(current_time)
+        print(audio_duration)
 
         if os.path.exists('./temps') == False:
             os.mkdir("./temps")
-        chunk_path = f"./temps/{"20_second.mp3"}_trimmed_{str(uuid.uuid3(uuid.NAMESPACE_OID, str(12)))}.wav"
+        chunk_path = f"./temps/{file_name}_trimmed_{str(uuid.uuid3(uuid.NAMESPACE_OID, str(current_time)))}.wav"
         ffmpeg_command = [
             "ffmpeg",
             "-y",
             "-i",
             temp_file_path,
             "-ss",
-            starting_timestamp,  # Start time in seconds
+            str(current_time),  # Start time in seconds
             "-t",
-            60,  # Duration in seconds
+            str(audio_length),  # Duration in seconds
             "-c",
             "copy",
             chunk_path,
@@ -418,15 +414,16 @@ def scroll_to_text(data):
             print(f"Error during trimming: {result.stderr}")
             # Handle the error as needed
 
-        send_message("message", "in the transcripting")
-
         model = whisper.load_model("base")
         print(chunk_path)
         audio_path = os.path.abspath(chunk_path)
 
         try:
+            result = []
+            print(current_time)
             result = model.transcribe(audio_path)
             print(result)
+            result = {"result": result, "current_time":current_time}
             send_message("result",result)
             socketio.start_background_task(target=scroll_update, result=result)
 
@@ -434,8 +431,11 @@ def scroll_to_text(data):
             print(f"Error during transcription: {e}")
         finally:
             os.remove(chunk_path)
+        if(current_time >= audio_duration):
+            break
+        else:  
+            current_time += audio_length
 
-    return jsonify({"message": "File uploaded successfully"}), 200 
 @app.route("/transcribe", methods=["POST"])
 def transcribe_audio_api():
     if "file" not in request.files:
