@@ -376,9 +376,13 @@ def upload():
             os.remove(chunk_path)
 
     return jsonify({"message": "File uploaded successfully"}), 200  
+transcription_running = True
 
 @socketio.on("scroll-to-text")
 def scroll_to_text(data):
+    global transcription_running
+    transcription_running = True
+
     current_time = data['current_time']
     audio_duration = data['audio_duration']
     file_name = data['file_name']
@@ -387,7 +391,7 @@ def scroll_to_text(data):
     audio_length = 30;
     current_time = float(current_time)
     audio_duration = float(audio_duration)
-    while True:
+    while transcription_running:
 
         print(current_time)
         print(audio_duration)
@@ -435,6 +439,15 @@ def scroll_to_text(data):
             break
         else:  
             current_time += audio_length
+
+
+@app.route("/stop-scroll", methods=["POST"])
+def stop_transcription():
+    global transcription_running
+    transcription_running = False
+    return jsonify({"message": "Scroll process stopped"}), 200
+
+
 
 @app.route("/transcribe", methods=["POST"])
 def transcribe_audio_api():
