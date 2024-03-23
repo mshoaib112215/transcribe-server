@@ -1,4 +1,5 @@
 import datetime
+import json
 import os
 import subprocess
 from flask import Flask, jsonify, request, Response, render_template
@@ -14,11 +15,13 @@ import time
 from flask_socketio import SocketIO
 import base64
 import asyncio
-
+import requests
 
 app = Flask(__name__)
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+root_url = "https://www.noteclimber.com/noteclimberConnection.php"
 
 
 # Add this decorator to apply the header to all responses
@@ -44,6 +47,8 @@ def convert_blob_to_wav(blob):
 
 def send_transcription(result):
     socketio.emit("transcription_update", {"transcription": result})
+
+
 def scroll_update(result):
     socketio.emit("scroll_update", {"result": result})
 
@@ -84,6 +89,7 @@ def send_message(key, message):
     socketio.send({"key": key, "message": message})
     socketio.sleep(1)
 
+
 @socketio.on("connect")
 def handle_connect():
     # message = "mesage is this"
@@ -116,13 +122,13 @@ def convert_time_format(time_str, output_format="%H:%M:%S"):
     time_delta = datetime.datetime.strptime(time_str, "%H:%M:%S").time()
 
     # Adjust the timedelta object for negative time
-    
-        # time_delta = datetime.timedelta(
-        #     hours=time_delta.hour,
-        #     minutes=time_delta.minute,
-        #     seconds=time_delta.second,
-        # )
-    
+
+    # time_delta = datetime.timedelta(
+    #     hours=time_delta.hour,
+    #     minutes=time_delta.minute,
+    #     seconds=time_delta.second,
+    # )
+
     time_delta = datetime.timedelta(
         hours=time_delta.hour, minutes=time_delta.minute, seconds=time_delta.second
     )
@@ -154,7 +160,7 @@ def start_transcription(
     # time_stamps = message.get("timeStamps")
     # audio_duration = message.get("audioDuration")
     # Decode base64 to get the file content
-   
+
     # file_content = file_content_base64.encode("utf-8")
     file_name = file_name.replace(" ", "_")
     # Save the file to a temporary path
@@ -162,7 +168,9 @@ def start_transcription(
 
     # with open(temp_file_path, "wb") as temp_file:
     #     temp_file.write(file_content_base64)
-    socketio.start_background_task(target=send_message, key="message", message="in the transcripting")
+    socketio.start_background_task(
+        target=send_message, key="message", message="in the transcripting"
+    )
     # Do something with the temporary file...
     # print(f"File saved to {temp_file_path}")
     # total_duration = timestamp_to_seconds(audio_duration)
@@ -222,6 +230,7 @@ def start_transcription(
 def stop_transcription():
     print("Stopping transcription")
 
+
 @app.route("/is-audio-exists", methods=["POST"])
 def is_audio_exists():
     file_name = request.form.get("fileName")
@@ -233,6 +242,7 @@ def is_audio_exists():
     else:
         return jsonify({"exists": False}), 200
 
+
 @app.route("/upload", methods=["POST"])
 def upload():
     if "file" in request.files:
@@ -243,27 +253,31 @@ def upload():
         filename = secure_filename(file.filename)
 
         target_path = "./temps2"
-        if(os.path.exists(target_path) == False):
+        if os.path.exists(target_path) == False:
             os.mkdir(target_path)
         file_path = os.path.join(target_path, filename)
 
         # Check if a file with the same name already exists
         if os.path.exists(file_path):
-            send_message("message","File already exists")
+            send_message("message", "File already exists")
         else:
             filename = secure_filename(file.filename)
             file.save(os.path.join("./temps2", filename))
-            send_message("message","File saved successfully")
+            send_message("message", "File saved successfully")
 
     # return jsonify({"message": "file saved successfully"}), 200
     # Get other form fields
-    file_name = request.form.get('fileName')
+    file_name = request.form.get("fileName")
     time_stamps = request.form.get("timeStamps")
     audio_duration = request.form.get("audioDuration")
     duration = request.form.get("duration")
     offset = request.form.get("offset")
     timeStampsType = request.form.get("timeStampsType")
     captured_time = request.form.get("capturedTime")
+    user_id = request.form.get("userId")
+    pdfText = request.form.get("pdfText")
+    bookName = request.form.get("bookName")
+
 
     target_path = "./temps2"
     file_path = os.path.join(target_path, file_name)
@@ -281,14 +295,14 @@ def upload():
 
     # socketio.start_background_task(target=send_hello_world, message="in the upload")
     try:
-        send_message("message","in the start transcripting")
+        send_message("message", "in the start transcripting")
     except RuntimeError:
         pass
     finally:
-        print('in the final')
+        print("in the final")
         pass
     # socketio.send(message)
-    print('outside the final')
+    print("outside the final")
 
     # file_content = file_content_base64.encode("utf-8")
     file_name = file_name.replace(" ", "_")
@@ -302,13 +316,14 @@ def upload():
     # print(f"File saved to {temp_file_path}")
     # total_duration = timestamp_to_seconds(audio_duration)
     # print(time_stamps)
+    transcriptions = []
     for key, timestamp in enumerate(time_stamps_list):
 
         formated_time = ""
         timetamp_sec = ""
         starting_timestamp = 0
         print(timeStampsType)
-        if(captured_time == "false"):
+        if captured_time == "false":
             if not isinstance(timestamp, str) or ":" not in timestamp:
                 try:
                     print("timestamp", timestamp)
@@ -319,9 +334,9 @@ def upload():
             else:
                 formated_time = convert_time_format(timestamp)
                 timetamp_sec = timestamp_to_seconds(formated_time)
-            if (timeStampsType == "start"):
+            if timeStampsType == "start":
                 starting_timestamp = timetamp_sec
-            elif( timeStampsType == "end"):
+            elif timeStampsType == "end":
                 timetamp_sec = float(audio_duration) - timetamp_sec
 
             starting_timestamp = str(timetamp_sec - float(offset))
@@ -333,10 +348,12 @@ def upload():
         else:
             starting_timestamp = timestamp
             pass
-        print(captured_time , " " , timestamp, " ", starting_timestamp, " ", timeStampsType)
+        print(
+            captured_time, " ", timestamp, " ", starting_timestamp, " ", timeStampsType
+        )
         # return jsonify({"message": "file saved successfully"}), 200
         print(starting_timestamp)
-        if os.path.exists('./temps') == False:
+        if os.path.exists("./temps") == False:
             os.mkdir("./temps")
         chunk_path = f"./temps/{file_name}_trimmed_{str(uuid.uuid3(uuid.NAMESPACE_OID, str(key)))}.wav"
         ffmpeg_command = [
@@ -366,29 +383,75 @@ def upload():
 
         try:
             result = model.transcribe(audio_path)
-            print(result)
-            send_message("result",result)
+            transcriptions.append(result)
+            send_message("result", result)
             socketio.start_background_task(target=send_transcription, result=result)
 
         except Exception as e:
             print(f"Error during transcription: {e}")
         finally:
             os.remove(chunk_path)
+    # want call this api of api_url/api/store-trans and pass the file_name, time_stamps, user_id, pdfText, transcription result
+    print(file_name, time_stamps, user_id, pdfText, transcriptions)
+    
+    api_url = root_url + "/api/store-trans"
+    response = requests.post(
+        api_url,
+        data={
+            "file_name": file_name,
+            "time_stamps": time_stamps,
+            "user_id": user_id,
+            "pdfText": pdfText,
+            "bookName": bookName,
+            "transcriptions": json.dumps(transcriptions),
+        },
+    )
+    print(response.text)
+    print(response.status_code)
 
-    return jsonify({"message": "File uploaded successfully"}), 200  
+    return jsonify({"message": "File uploaded successfully"}), 200
+
+
 transcription_running = True
+
+@app.route("/test-api", methods=["POST"])
+def test_api():
+    file_name = request.form.get("fileName")
+    time_stamps = request.form.get("timestamps")
+    user_id = request.form.get("userId")
+    pdfText = request.form.get("pdfText")
+    bookName = request.form.get("bookName")
+    print(bookName)
+    transcriptions = request.form.get("transcriptions")
+    print(transcriptions)
+    api_url = root_url + "/api/store-trans"
+    print(api_url)
+    response = requests.post(
+        api_url,
+        data={
+            "file_name": file_name,
+            "time_stamps": time_stamps,
+            "user_id": user_id,
+            "pdfText": pdfText,
+            "bookName": bookName,
+            "transcriptions": json.dumps(transcriptions),
+        },
+    )
+    print(response.text)
+    print(response.status_code)
+    return jsonify({"message": "File uploaded successfully" + str(response)}), 200
 
 @socketio.on("scroll-to-text")
 def scroll_to_text(data):
     global transcription_running
     transcription_running = True
 
-    current_time = data['current_time']
-    audio_duration = data['audio_duration']
-    file_name = data['file_name']
+    current_time = data["current_time"]
+    audio_duration = data["audio_duration"]
+    file_name = data["file_name"]
     file_name = file_name.replace(" ", "_")
     temp_file_path = "./temps2/" + file_name
-    audio_length = 30;
+    audio_length = 30
     current_time = float(current_time)
     audio_duration = float(audio_duration)
     while transcription_running:
@@ -396,7 +459,7 @@ def scroll_to_text(data):
         print(current_time)
         print(audio_duration)
 
-        if os.path.exists('./temps') == False:
+        if os.path.exists("./temps") == False:
             os.mkdir("./temps")
         chunk_path = f"./temps/{file_name}_trimmed_{str(uuid.uuid3(uuid.NAMESPACE_OID, str(current_time)))}.wav"
         ffmpeg_command = [
@@ -427,17 +490,17 @@ def scroll_to_text(data):
             print(current_time)
             result = model.transcribe(audio_path)
             print(result)
-            result = {"result": result, "current_time":current_time}
-            send_message("result",result)
+            result = {"result": result, "current_time": current_time}
+            send_message("result", result)
             socketio.start_background_task(target=scroll_update, result=result)
 
         except Exception as e:
             print(f"Error during transcription: {e}")
         finally:
             os.remove(chunk_path)
-        if(current_time >= audio_duration):
+        if current_time >= audio_duration:
             break
-        else:  
+        else:
             current_time += audio_length
 
 
@@ -446,7 +509,6 @@ def stop_transcription():
     global transcription_running
     transcription_running = False
     return jsonify({"message": "Scroll process stopped"}), 200
-
 
 
 @app.route("/transcribe", methods=["POST"])
@@ -465,6 +527,7 @@ def transcribe_audio_api():
     result = model.transcribe(audio_path)
     os.remove(wav_file_path)
     return jsonify(result)
+
 
 @app.route("/store-audio", methods=["POST"])
 def store_audio():
@@ -490,6 +553,7 @@ def store_audio():
             send_message("message", "File saved successfully")
             return jsonify({"message": "File saved successfully"}), 200
 
+
 def run_socketio():
     print("Initializing SocketIO server...")
     app.run(host="0.0.0.0", port=5112, debug=True)
@@ -505,7 +569,6 @@ if __name__ == "__main__":
     socketio.run(app, host="0.0.0.0", port=5111, allow_unsafe_werkzeug=True)
     # # Allow some time for the SocketIO server to start before running the main Flask app
     # time.sleep(2)
-    
 
     # print("Running Flask app...")
     # app.run(host="0.0.0.0", port=5112)
