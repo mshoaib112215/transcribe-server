@@ -1,6 +1,8 @@
 import datetime
 import json
 import os
+from queue import Queue
+
 import subprocess
 from flask import Flask, jsonify, request, Response, render_template
 from flask_cors import CORS
@@ -21,7 +23,8 @@ app = Flask(__name__)
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-root_url = "https://www.noteclimber.com/noteclimberConnection.php"
+root_url = "http://localhost/noteclimberConnection.php"
+# root_url = "https://www.noteclimber.com/noteclimberConnection.php"
 
 
 # Add this decorator to apply the header to all responses
@@ -243,7 +246,127 @@ def is_audio_exists():
         return jsonify({"exists": False}), 200
 
 
-@app.route("/upload", methods=["POST"])
+task_queue = Queue()
+
+
+# Function to process the uploaded file and start transcription
+def process_upload(
+    file_name,
+    time_stamps,
+    audio_duration,
+    duration,
+    offset,
+    time_stamps_type,
+    captured_time,
+    user_id,
+    pdf_text,
+    book_name,
+    trans_id,
+):
+    target_path = "./temps2"
+    if not os.path.exists(target_path):
+        os.mkdir(target_path)
+    file_path = os.path.join(target_path, file_name)
+
+    file_name = file_name.replace(" ", "_")
+    # Process other form fields as needed
+    print("File Name:", file_name)
+    print("Time Stamps:", time_stamps)
+    print("Audio Duration:", audio_duration)
+    # Add file name in the db and retreive the id to use it in updataing row on each timestamp completeion of process
+
+    time_stamps_list = time_stamps.split(",")
+    transcriptions = []
+    total_expected_timestamps = len(time_stamps_list)
+    timestamps_computed = 0
+
+    for key, timestamp in enumerate(time_stamps_list):
+        formated_time = ""
+        timetamp_sec = ""
+        starting_timestamp = 0
+        if captured_time == "false":
+            if not isinstance(timestamp, str) or ":" not in timestamp:
+                try:
+                    timetamp_sec = float(timestamp) * 3600
+                except ValueError:
+                    continue
+            else:
+                formated_time = convert_time_format(timestamp)
+                timetamp_sec = timestamp_to_seconds(formated_time)
+            if time_stamps_type == "start":
+                starting_timestamp = timetamp_sec
+            elif time_stamps_type == "end":
+                timetamp_sec = float(audio_duration) - timetamp_sec
+            starting_timestamp = str(timetamp_sec - float(offset))
+        else:
+            starting_timestamp = timestamp
+        if os.path.exists("./temps") == False:
+            os.mkdir("./temps")
+        chunk_path = f"./temps/{file_name}_trimmed_{str(uuid.uuid3(uuid.NAMESPACE_OID, str(key)))}.wav"
+        ffmpeg_command = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            os.path.join(target_path, file_name),
+            "-ss",
+            starting_timestamp,  # Start time in seconds
+            "-t",
+            duration,  # Duration in seconds
+            "-c",
+            "copy",
+            chunk_path,
+        ]
+        result = subprocess.run(ffmpeg_command, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"Error during trimming: {result.stderr}")
+            # Handle the error as needed
+
+        send_message("message", "in the transcripting")
+        model = whisper.load_model("base")
+        print(chunk_path)
+        audio_path = os.path.abspath(chunk_path)
+        try:
+            result = model.transcribe(audio_path)
+            transcriptions.append(result)
+            send_message("result", result)
+
+            timestamps_computed += 1
+            percentage_completion = (
+                timestamps_computed / total_expected_timestamps
+            ) * 100
+
+            api_url = root_url + "/api/update-trans"
+            response = requests.post(
+                api_url,
+                data={
+                    "trans_id": trans_id,
+                    "new_trans": json.dumps([result]),
+                    "status": percentage_completion,
+                },
+            )
+            print(response.text)
+            print(response.status_code)
+            socketio.start_background_task(target=send_transcription, result=result)
+
+        except Exception as e:
+            print(f"Error during transcription: {e}")
+        finally:
+            os.remove(chunk_path)
+
+    # Post process the transcriptions or perform any other operations
+    print("File Name:", file_name)
+    print("User ID:", user_id)
+    print("PDF Text:", pdf_text)
+    print("Book Name:", book_name)
+    print("Transcriptions:", transcriptions)
+
+    # Now, you can make the API call to store transcriptions
+
+
+audio_book_queue = Queue()
+
+
+# Function to handle the API upload endpoint
 def upload():
     if "file" in request.files:
         file = request.files["file"]
@@ -265,135 +388,18 @@ def upload():
             file.save(os.path.join("./temps2", filename))
             send_message("message", "File saved successfully")
 
-    # return jsonify({"message": "file saved successfully"}), 200
     # Get other form fields
     file_name = request.form.get("fileName")
     time_stamps = request.form.get("timeStamps")
     audio_duration = request.form.get("audioDuration")
     duration = request.form.get("duration")
     offset = request.form.get("offset")
-    timeStampsType = request.form.get("timeStampsType")
+    time_stamps_type = request.form.get("timeStampsType")
     captured_time = request.form.get("capturedTime")
     user_id = request.form.get("userId")
-    pdfText = request.form.get("pdfText")
-    bookName = request.form.get("bookName")
+    pdf_text = request.form.get("pdfText")
+    book_name = request.form.get("bookName")
 
-
-    target_path = "./temps2"
-    file_path = os.path.join(target_path, file_name)
-    # message = "in the start transcription"
-    # socketio.emit("message", message)
-    # Process other form fields as needed
-    print("File Name:", file_name)
-    print("Time Stamps:", time_stamps)
-    print("Audio Duration:", audio_duration)
-
-    time_stamps_list = time_stamps.split(",")
-    # start_transcription(
-    #     file_name, time_stamps_list, audio_duration, duration, offset, timeStampsType
-    # )
-
-    # socketio.start_background_task(target=send_hello_world, message="in the upload")
-    try:
-        send_message("message", "in the start transcripting")
-    except RuntimeError:
-        pass
-    finally:
-        print("in the final")
-        pass
-    # socketio.send(message)
-    print("outside the final")
-
-    # file_content = file_content_base64.encode("utf-8")
-    file_name = file_name.replace(" ", "_")
-    # Save the file to a temporary path
-    temp_file_path = "./temps2/" + file_name
-
-    # with open(temp_file_path, "wb") as temp_file:
-    #     temp_file.write(file_content_base64)
-
-    # Do something with the temporary file...
-    # print(f"File saved to {temp_file_path}")
-    # total_duration = timestamp_to_seconds(audio_duration)
-    # print(time_stamps)
-    transcriptions = []
-    for key, timestamp in enumerate(time_stamps_list):
-
-        formated_time = ""
-        timetamp_sec = ""
-        starting_timestamp = 0
-        print(timeStampsType)
-        if captured_time == "false":
-            if not isinstance(timestamp, str) or ":" not in timestamp:
-                try:
-                    print("timestamp", timestamp)
-                    timetamp_sec = float(timestamp) * 3600
-                except ValueError:
-                    print("convertion failed: ", ValueError)
-                    continue
-            else:
-                formated_time = convert_time_format(timestamp)
-                timetamp_sec = timestamp_to_seconds(formated_time)
-            if timeStampsType == "start":
-                starting_timestamp = timetamp_sec
-            elif timeStampsType == "end":
-                timetamp_sec = float(audio_duration) - timetamp_sec
-
-            starting_timestamp = str(timetamp_sec - float(offset))
-
-            # starting_timestamp = convert_seconds_to_timestamp(
-            #     timetamp_sec - float(offset)
-            # )
-            print(starting_timestamp)
-        else:
-            starting_timestamp = timestamp
-            pass
-        print(
-            captured_time, " ", timestamp, " ", starting_timestamp, " ", timeStampsType
-        )
-        # return jsonify({"message": "file saved successfully"}), 200
-        print(starting_timestamp)
-        if os.path.exists("./temps") == False:
-            os.mkdir("./temps")
-        chunk_path = f"./temps/{file_name}_trimmed_{str(uuid.uuid3(uuid.NAMESPACE_OID, str(key)))}.wav"
-        ffmpeg_command = [
-            "ffmpeg",
-            "-y",
-            "-i",
-            temp_file_path,
-            "-ss",
-            starting_timestamp,  # Start time in seconds
-            "-t",
-            duration,  # Duration in seconds
-            "-c",
-            "copy",
-            chunk_path,
-        ]
-
-        result = subprocess.run(ffmpeg_command, capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f"Error during trimming: {result.stderr}")
-            # Handle the error as needed
-
-        send_message("message", "in the transcripting")
-
-        model = whisper.load_model("base")
-        print(chunk_path)
-        audio_path = os.path.abspath(chunk_path)
-
-        try:
-            result = model.transcribe(audio_path)
-            transcriptions.append(result)
-            send_message("result", result)
-            socketio.start_background_task(target=send_transcription, result=result)
-
-        except Exception as e:
-            print(f"Error during transcription: {e}")
-        finally:
-            os.remove(chunk_path)
-    # want call this api of api_url/api/store-trans and pass the file_name, time_stamps, user_id, pdfText, transcription result
-    print(file_name, time_stamps, user_id, pdfText, transcriptions)
-    
     api_url = root_url + "/api/store-trans"
     response = requests.post(
         api_url,
@@ -401,18 +407,218 @@ def upload():
             "file_name": file_name,
             "time_stamps": time_stamps,
             "user_id": user_id,
-            "pdfText": pdfText,
-            "bookName": bookName,
-            "transcriptions": json.dumps(transcriptions),
+            "pdfText": pdf_text,
+            "bookName": book_name,
+            "transcriptions": json.dumps([]),
         },
     )
-    print(response.text)
-    print(response.status_code)
+    res = json.loads(response.text)
 
-    return jsonify({"message": "File uploaded successfully"}), 200
+    trans_id = res["response"]["insert_id"]
+    print(trans_id)
+    api_url = root_url + "/api/check-stored-whole-trans"
+    response = requests.post(
+        api_url,
+        data={
+            "audio_book_name": file_name,
+        },
+    )
+    if response.status_code == 200:
+        res = json.loads(response.text)
 
+        res_json = json.loads(res)
+
+        
+        result = process_if_found(
+            res_json,
+            time_stamps,
+            audio_duration,
+            duration,
+            offset,
+            time_stamps_type,
+            captured_time,
+        )
+        socketio.start_background_task(target=send_transcription, result=result)
+        
+
+        return jsonify({"message": "processing Completed!"}), 200
+            
+
+    # Enqueue the processing task
+    task_queue.put(
+        lambda: process_upload(
+            file_name,
+            time_stamps,
+            audio_duration,
+            duration,
+            offset,
+            time_stamps_type,
+            captured_time,
+            user_id,
+            pdf_text,
+            book_name,
+            trans_id,
+        )
+    )
+    audio_book_queue.put(
+        lambda: transcribe_audio_book(file_name, audio_duration, user_id)
+    )
+    return jsonify({"message": "File processing request queued!"}), 200
+
+
+def process_if_found(
+    transcription,
+    time_stamps,
+    audio_duration,
+    duration,
+    offset,
+    time_stamps_type,
+    captured_time,
+):
+    if transcription:
+        time_stamps_list = time_stamps.split(",")
+        transcriptions = []
+
+        for timestamp in time_stamps_list:
+            formatted_time = ""
+            timestamp_sec = ""
+            starting_timestamp = 0
+
+            if captured_time == "false":
+                if not isinstance(timestamp, str) or ":" not in timestamp:
+                    try:
+                        timestamp_sec = float(timestamp) * 3600
+                    except ValueError:
+                        continue
+                else:
+                    formatted_time = convert_time_format(timestamp)
+                    timestamp_sec = timestamp_to_seconds(formatted_time)
+
+                if time_stamps_type == "start":
+                    starting_timestamp = timestamp_sec
+                elif time_stamps_type == "end":
+                    timestamp_sec = float(audio_duration) - timestamp_sec
+                starting_timestamp = str(timestamp_sec - float(offset))
+            else:
+                starting_timestamp = timestamp
+
+            # Find the segment containing the starting timestamp
+            start_segment = None
+            end_segments = []
+
+            for seg in transcription["segments"]:
+                if seg["start"] <= float(starting_timestamp) <= seg["end"]:
+                    start_segment = seg
+                    continue
+
+                print(
+                    # seg["start"]
+                    # <= float(starting_timestamp) + float(duration)
+                    seg["end"]
+                )
+
+                if (
+                    float(starting_timestamp)
+                    <= seg["start"]
+                    <= float(starting_timestamp) + float(duration)
+                    <= seg["end"]
+                ):
+                    end_segments.append(seg)
+                    continue
+                elif float(starting_timestamp) + float(duration) < seg["end"]:
+                    break
+                elif start_segment:
+                    end_segments.append(seg)
+
+            if start_segment:
+                segs = []
+                text = ""
+                # Extract text from the start segment
+                segs.append(start_segment)
+                text += start_segment["text"]
+
+                # Extract text from the end segments
+                for segment in end_segments:
+                    segs.append(segment)
+                    text += segment["text"]
+
+                transcriptions.append({"text": text, "segments": segs})
+
+        return transcriptions[0]
+
+    return None
+
+
+# Route for handling upload endpoint
+app.route("/upload", methods=["POST"])(upload)
+
+
+def transcribe_audio_book(file_name, audio_duration, user_id):
+    # check if the file already processes using api $method == 'POST' && $path == '/noteclimberConnection.php/api/check-stored-whole-trans'
+    response = requests.post(
+        root_url + "/api/check-stored-whole-trans", data={"audio_book_name": file_name}
+    )
+    if response.status_code == 200:
+        return
+    # segmenting 50 sec using ffmpeg -> transcribe it -> delete current segment -> store the transcription in db and then process the next segment
+    target_path = "./temps2"
+    if not os.path.exists(target_path):
+        os.mkdir(target_path)
+    new_file_name = file_name.replace(" ", "_")
+    file_path = os.path.join(target_path, new_file_name)
+
+    model = whisper.load_model("base")
+    print(file_path)
+    audio_path = os.path.abspath(file_path)
+    try:
+        result = model.transcribe(audio_path)
+        response = requests.post(
+            root_url + "/api/store-whole-trans",
+            data={
+                "user_id": user_id,
+                "audio_book_name": file_name,
+                "trans": json.dumps(result),
+            },
+        )
+        if response.status_code == 200:
+            print(response.text)
+        print(result)
+    except Exception as e:
+        print(f"Error during transcription: {e}")
+
+
+def start_audio_book_queue_processing():
+    print("Starting audio book queue processing...")
+    while True:
+        task = audio_book_queue.get()
+        print("Processing audio book...")
+        task()
+        audio_book_queue.task_done()
+
+
+# Start the audio book queue processing thread
+worker = Thread(target=start_audio_book_queue_processing)
+worker.daemon = True
+worker.start()
+
+
+# Function to start the background thread to process the queue
+def start_queue_processing():
+    print("start queue processing")
+    while True:
+        task = task_queue.get()
+        print("processing...")
+        task()
+        task_queue.task_done()
+
+
+# Start the background thread
+worker = Thread(target=start_queue_processing)
+worker.daemon = True
+worker.start()
 
 transcription_running = True
+
 
 @app.route("/test-api", methods=["POST"])
 def test_api():
@@ -440,6 +646,7 @@ def test_api():
     print(response.text)
     print(response.status_code)
     return jsonify({"message": "File uploaded successfully" + str(response)}), 200
+
 
 @socketio.on("scroll-to-text")
 def scroll_to_text(data):
@@ -566,7 +773,8 @@ if __name__ == "__main__":
 
     # socketio.run(app, host="0.0.0.0", port=5111, debug=True)
 
-    socketio.run(app, host="0.0.0.0", port=5111, allow_unsafe_werkzeug=True)
+    socketio.run(app, host="0.0.0.0", port=5111, debug=True)
+    # socketio.run(app, host="0.0.0.0", port=5111, allow_unsafe_werkzeug=True)
     # # Allow some time for the SocketIO server to start before running the main Flask app
     # time.sleep(2)
 
