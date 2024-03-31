@@ -23,8 +23,8 @@ app = Flask(__name__)
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-root_url = "http://localhost/noteclimberConnection.php"
-# root_url = "https://www.noteclimber.com/noteclimberConnection.php"
+# root_url = "http://localhost/noteclimberConnection.php"
+root_url = "https://www.noteclimber.com/noteclimberConnection.php"
 
 
 # Add this decorator to apply the header to all responses
