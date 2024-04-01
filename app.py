@@ -2,6 +2,7 @@ import datetime
 import json
 import os
 from queue import Queue
+import psutil
 
 import subprocess
 from flask import Flask, jsonify, request, Response, render_template
@@ -593,14 +594,19 @@ def start_audio_book_queue_processing():
         task = audio_book_queue.get()
         print("Processing audio book...")
         task()
-        audio_book_queue.task_done()
+        audio_book_queue.task_done()    
 
+# Function to limit CPU usage for a thread
+def limit_cpu_usage(thread, limit):
+    p = psutil.Process(thread.ident)
+    p.cpu_affinity([0])  # Limit to the first CPU core
+    p.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)  # Lower the priority
 
 # Start the audio book queue processing thread
-worker = Thread(target=start_audio_book_queue_processing)
-worker.daemon = True
-worker.start()
-
+audio_worker = threading.Thread(target=start_audio_book_queue_processing)
+audio_worker.daemon = True
+limit_cpu_usage(audio_worker, 0.5)  # Limit to 50% CPU usage
+audio_worker.start()
 
 # Function to start the background thread to process the queue
 def start_queue_processing():
