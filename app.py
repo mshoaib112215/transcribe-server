@@ -555,7 +555,7 @@ app.route("/upload", methods=["POST"])(upload)
 
 
 def transcribe_audio_book(file_name, audio_duration, user_id):
-    root_url = "YOUR_API_ROOT_URL"  # Update this with your API root URL
+    
 
     # Check if the file is already processed
     response = requests.post(
