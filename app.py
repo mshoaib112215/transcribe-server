@@ -555,37 +555,100 @@ app.route("/upload", methods=["POST"])(upload)
 
 
 def transcribe_audio_book(file_name, audio_duration, user_id):
-    # check if the file already processes using api $method == 'POST' && $path == '/noteclimberConnection.php/api/check-stored-whole-trans'
+    root_url = "YOUR_API_ROOT_URL"  # Update this with your API root URL
+
+    # Check if the file is already processed
     response = requests.post(
         root_url + "/api/check-stored-whole-trans", data={"audio_book_name": file_name}
     )
     if response.status_code == 200:
         return
-    # segmenting 50 sec using ffmpeg -> transcribe it -> delete current segment -> store the transcription in db and then process the next segment
-    target_path = "./temps2"
+
+    # Define segment duration (in seconds)
+    segment_duration = 50
+
+    # Create a directory for storing segments if it doesn't exist
+    target_path = "./segments"
     if not os.path.exists(target_path):
         os.mkdir(target_path)
-    new_file_name = file_name.replace(" ", "_")
-    file_path = os.path.join(target_path, new_file_name)
 
-    model = whisper.load_model("base")
-    print(file_path)
-    audio_path = os.path.abspath(file_path)
-    try:
-        result = model.transcribe(audio_path)
-        response = requests.post(
-            root_url + "/api/store-whole-trans",
-            data={
-                "user_id": user_id,
-                "audio_book_name": file_name,
-                "trans": json.dumps(result),
-            },
+    # Replace spaces in file name with underscores
+    new_file_name = file_name.replace(" ", "_")
+
+    # Initialize list to store segment transcriptions
+    all_segments = []
+
+    # Initialize text for concatenation
+    concatenated_text = ""
+
+    # Iterate through each segment
+    for segment_start in range(0, audio_duration, segment_duration):
+        # Calculate segment end time
+        segment_end = min(segment_start + segment_duration, audio_duration)
+
+        # Generate output file path for the segment
+        segment_file_path = os.path.join(
+            target_path, f"{new_file_name}_{segment_start}-{segment_end}.mp3"
         )
-        if response.status_code == 200:
-            print(response.text)
-        print(result)
-    except Exception as e:
-        print(f"Error during transcription: {e}")
+
+        # Extract segment using ffmpeg
+        ffmpeg_command = [
+            "ffmpeg",
+            "-ss",
+            str(segment_start),
+            "-to",
+            str(segment_end),
+            "-i",
+            file_name,
+            "-c",
+            "copy",
+            segment_file_path,
+        ]
+        subprocess.run(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        # Transcribe the segment
+        model = whisper.load_model("base")
+        try:
+            result = model.transcribe(segment_file_path)
+
+            # Update segment objects with segment_start value and concatenate text
+            for segment in result["segments"]:
+                segment["start"] += segment_start
+                segment["end"] += segment_start
+                segment["text"] = concatenated_text + segment["text"]
+                all_segments.append(segment)
+
+            # Update concatenated text
+            concatenated_text += result["text"]
+
+        except Exception as e:
+            print(
+                f"Error during transcription of segment {segment_start}-{segment_end}: {e}"
+            )
+
+        # Delete segment file to save space
+        os.remove(segment_file_path)
+
+    # Create final result object
+    final_result = {
+        "text": concatenated_text,
+        "segments": all_segments,
+        "language": "en",  # You may need to update this based on the language
+    }
+
+    # Store the final result in the database
+    response = requests.post(
+        root_url + "/api/store-whole-trans",
+        data={
+            "user_id": user_id,
+            "audio_book_name": file_name,
+            "trans": json.dumps(final_result),
+        },
+    )
+    if response.status_code == 200:
+        print(response.text)
+
+    print("Transcription completed.")
 
 
 def start_audio_book_queue_processing():
@@ -606,7 +669,7 @@ def limit_cpu_usage(thread, limit):
 # Start the audio book queue processing thread
 audio_worker = threading.Thread(target=start_audio_book_queue_processing)
 audio_worker.daemon = True
-limit_cpu_usage(audio_worker, 0.5)  # Limit to 50% CPU usage
+# limit_cpu_usage(audio_worker, 0.5)  # Limit to 50% CPU usage
 audio_worker.start()
 
 # Function to start the background thread to process the queue
