@@ -3,7 +3,7 @@ import json
 import os
 from queue import Queue
 import psutil
-
+import math
 import subprocess
 from flask import Flask, jsonify, request, Response, render_template
 from flask_cors import CORS
@@ -557,7 +557,8 @@ app.route("/upload", methods=["POST"])(upload)
 def transcribe_audio_book(file_name, audio_duration, user_id):
     
     # Convert audio_duration to integer
-    audio_duration = float(audio_duration)
+    audio_duration = int(math.ceil(float(audio_duration)))  # Round float to nearest integer
+
     # Check if the file is already processed
     response = requests.post(
         root_url + "/api/check-stored-whole-trans", data={"audio_book_name": file_name}
@@ -566,7 +567,7 @@ def transcribe_audio_book(file_name, audio_duration, user_id):
         return
 
     # Define segment duration (in seconds)
-    segment_duration = 50.0
+    segment_duration = 50
 
     # Create a directory for storing segments if it doesn't exist
     target_path = "./segments"
