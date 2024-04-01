@@ -166,7 +166,7 @@ def start_transcription(
     # Decode base64 to get the file content
 
     # file_content = file_content_base64.encode("utf-8")
-    file_name = file_name.replace(" ", "_")
+    file_name = secure_filename(file_name)
     # Save the file to a temporary path
     temp_file_path = "./temps2/" + file_name
 
@@ -238,7 +238,7 @@ def stop_transcription():
 @app.route("/is-audio-exists", methods=["POST"])
 def is_audio_exists():
     file_name = request.form.get("fileName")
-    file_name = file_name.replace(" ", "_")
+    file_name = secure_filename(file_name)
     file_path = f"./temps2/{file_name}"
     print(file_path)
     if os.path.exists(file_path):
@@ -269,7 +269,7 @@ def process_upload(
         os.mkdir(target_path)
     file_path = os.path.join(target_path, file_name)
 
-    file_name = file_name.replace(" ", "_")
+    file_name = secure_filename(file_name)
     # Process other form fields as needed
     print("File Name:", file_name)
     print("Time Stamps:", time_stamps)
@@ -575,7 +575,7 @@ def transcribe_audio_book(file_name, audio_duration, user_id):
         os.mkdir(target_path)
 
     # Replace spaces in file name with underscores
-    new_file_name = file_name.replace(" ", "_")
+    new_file_name = secure_filename(file_name)
 
     # Initialize list to store segment transcriptions
     all_segments = []
@@ -728,7 +728,7 @@ def scroll_to_text(data):
     current_time = data["current_time"]
     audio_duration = data["audio_duration"]
     file_name = data["file_name"]
-    file_name = file_name.replace(" ", "_")
+    file_name = secure_filename(file_name)
     temp_file_path = "./temps2/" + file_name
     audio_length = 30
     current_time = float(current_time)
