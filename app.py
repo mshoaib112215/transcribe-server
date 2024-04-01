@@ -557,7 +557,7 @@ app.route("/upload", methods=["POST"])(upload)
 def transcribe_audio_book(file_name, audio_duration, user_id):
     
     # Convert audio_duration to integer
-    audio_duration = int(audio_duration)
+    audio_duration = float(audio_duration)
     # Check if the file is already processed
     response = requests.post(
         root_url + "/api/check-stored-whole-trans", data={"audio_book_name": file_name}
@@ -566,7 +566,7 @@ def transcribe_audio_book(file_name, audio_duration, user_id):
         return
 
     # Define segment duration (in seconds)
-    segment_duration = 50
+    segment_duration = 50.0
 
     # Create a directory for storing segments if it doesn't exist
     target_path = "./segments"
