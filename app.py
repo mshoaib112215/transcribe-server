@@ -600,7 +600,8 @@ def start_audio_book_queue_processing():
 def limit_cpu_usage(thread, limit):
     p = psutil.Process(thread.ident)
     p.cpu_affinity([0])  # Limit to the first CPU core
-    p.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)  # Lower the priority
+    p.nice(10) # for linux
+    # p.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)  # Lower the priority for windows
 
 # Start the audio book queue processing thread
 audio_worker = threading.Thread(target=start_audio_book_queue_processing)
