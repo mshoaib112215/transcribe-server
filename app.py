@@ -555,7 +555,7 @@ app.route("/upload", methods=["POST"])(upload)
 
 
 def transcribe_audio_book(file_name, audio_duration, user_id):
-    
+
     # Convert audio_duration to integer
     audio_duration = int(math.ceil(float(audio_duration)))  # Round float to nearest integer
 
@@ -618,11 +618,10 @@ def transcribe_audio_book(file_name, audio_duration, user_id):
             for segment in result["segments"]:
                 segment["start"] += segment_start
                 segment["end"] += segment_start
-                segment["text"] = concatenated_text + segment["text"]
+                concatenated_text = concatenated_text + segment["text"]
                 all_segments.append(segment)
 
-            # Update concatenated text
-            concatenated_text += result["text"]
+            
 
         except Exception as e:
             print(
