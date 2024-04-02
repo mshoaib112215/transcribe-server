@@ -601,7 +601,7 @@ def transcribe_audio_book(file_name, audio_duration, user_id):
             "-to",
             str(segment_end),
             "-i",
-            secure_filename(file_name),
+            "./temps2/"+{secure_filename(file_name)},
             "-c",
             "copy",
             segment_file_path,
