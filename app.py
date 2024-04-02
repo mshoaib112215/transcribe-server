@@ -592,6 +592,7 @@ def transcribe_audio_book(file_name, audio_duration, user_id):
         segment_file_path = os.path.join(
             target_path, f"{new_file_name}_{segment_start}-{segment_end}.mp3"
         )
+        target_directory = os.path.join("./temps2", secure_filename(file_name))
 
         # Extract segment using ffmpeg
         ffmpeg_command = [
@@ -601,7 +602,7 @@ def transcribe_audio_book(file_name, audio_duration, user_id):
             "-to",
             str(segment_end),
             "-i",
-            "./temps2/"+{secure_filename(file_name)},
+            target_directory,
             "-c",
             "copy",
             segment_file_path,
