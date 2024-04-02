@@ -582,7 +582,7 @@ def transcribe_audio_book(file_name, audio_duration, user_id):
 
     # Initialize text for concatenation
     concatenated_text = ""
-
+    print("file name is in whole trans: " + secure_filename(file_name))
     # Iterate through each segment
     for segment_start in range(0, audio_duration, segment_duration):
         # Calculate segment end time
