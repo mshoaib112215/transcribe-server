@@ -456,8 +456,9 @@ def upload():
             "book_name": book_name,
         },
     )
-
-    whole_book_id = response["response"]["insert_id"]
+    
+    whole_book_id = int(response.text)
+    
     # Enqueue the processing task
     if(len(time_stamps) != 0):
         task_queue.put(
