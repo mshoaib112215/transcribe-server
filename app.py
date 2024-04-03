@@ -416,6 +416,7 @@ def upload():
     res = json.loads(response.text)
 
     trans_id = res["response"]["insert_id"]
+    
     print(trans_id)
     api_url = root_url + "/api/check-stored-whole-trans"
     response = requests.post(
@@ -446,23 +447,25 @@ def upload():
             
 
     # Enqueue the processing task
-    task_queue.put(
-        lambda: process_upload(
-            file_name,
-            time_stamps,
-            audio_duration,
-            duration,
-            offset,
-            time_stamps_type,
-            captured_time,
-            user_id,
-            pdf_text,
-            book_name,
-            trans_id,
+    if(len(time_stamps) != 0):
+        task_queue.put(
+            lambda: process_upload(
+                file_name,
+                time_stamps,
+                audio_duration,
+                duration,
+                offset,
+                time_stamps_type,
+                captured_time,
+                user_id,
+                pdf_text,
+                book_name,
+                trans_id,
+            )
         )
-    )
     audio_book_queue.put(
-        lambda: transcribe_audio_book(file_name, audio_duration, user_id)
+        lambda: transcribe_audio_book(file_name, audio_duration, user_id, pdf_text,
+        book_name)
     )
     return jsonify({"message": "File processing request queued!"}), 200
 
@@ -554,8 +557,9 @@ def process_if_found(
 app.route("/upload", methods=["POST"])(upload)
 
 
-def transcribe_audio_book(file_name, audio_duration, user_id):
-
+def transcribe_audio_book(file_name, audio_duration, user_id,pdf_text,
+        book_name):
+    file_name = secure_filename(file_name)
     # Convert audio_duration to integer
     audio_duration = int(math.ceil(float(audio_duration)))  # Round float to nearest integer
 
@@ -568,51 +572,82 @@ def transcribe_audio_book(file_name, audio_duration, user_id):
 
     # Define segment duration (in seconds)
     segment_duration = 50
-
+    insert_id = None
+    reserver_response = requests.post(
+        root_url + "/api/reserver-whole-trans", data={"audio_book_name": file_name, "pdf_text":pdf_text, "book_name":book_name, "user_id":user_id}
+    )
+    if reserver_response.status_code == 200:
+        # Extract the insert ID from the response JSON
+        response_data = reserver_response.json()
+        insert_id = response_data.get('insert_id')
     # Create a directory for storing segments if it doesn't exist
     target_path = "./segments"
     if not os.path.exists(target_path):
         os.mkdir(target_path)
 
     # Replace spaces in file name with underscores
-    new_file_name = secure_filename(file_name)
+    new_file_name = file_name
 
     # Initialize list to store segment transcriptions
     all_segments = []
 
     # Initialize text for concatenation
     concatenated_text = ""
-    print("file name is in whole trans: " + secure_filename(file_name))
+    print("file name is in whole trans: " + file_name)
     # Iterate through each segment
+    # Set the target directory
+
     for segment_start in range(0, audio_duration, segment_duration):
         # Calculate segment end time
         segment_end = min(segment_start + segment_duration, audio_duration)
 
         # Generate output file path for the segment
         segment_file_path = os.path.join(
-            target_path, f"{new_file_name}_{segment_start}-{segment_end}.mp3"
+            target_path, f"{segment_start}-{segment_end}_{new_file_name}"
         )
-        target_directory = os.path.join("./temps2", secure_filename(file_name))
+        target_path = "temps2"
+
+        # Construct input file path
+        input_file_path = os.path.join(target_path, file_name)
+        print(input_file_path)
+
+        # Check if the input file exists
+        if not os.path.exists(input_file_path):
+            print("File does not exist. Skipping segment.")
+            continue
 
         # Extract segment using ffmpeg
         ffmpeg_command = [
             "ffmpeg",
-            "-ss",
-            str(segment_start),
-            "-to",
-            str(segment_end),
+            "-y",
             "-i",
-            target_directory,
+            input_file_path,
+            "-ss",
+            str(segment_start),  # Start time in seconds
+            "-t",
+            str(segment_end),  # Duration in seconds
             "-c",
             "copy",
-            segment_file_path,
+            segment_file_path
         ]
-        subprocess.run(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
+
+        try:
+            subprocess.run(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except Exception as ex:
+            print(ex)
+            print(input_file_path)
+            return
 
         # Transcribe the segment
         model = whisper.load_model("base")
         try:
             result = model.transcribe(segment_file_path)
+            status = calculate_status(segment_start, audio_duration)
+
+            reserver_response = requests.post(
+                root_url + "/api/update-status-whole-trans", data={"status": status, "row_id": insert_id}
+            )
 
             # Update segment objects with segment_start value and concatenate text
             for segment in result["segments"]:
@@ -620,8 +655,6 @@ def transcribe_audio_book(file_name, audio_duration, user_id):
                 segment["end"] += segment_start
                 concatenated_text = concatenated_text + segment["text"]
                 all_segments.append(segment)
-
-            
 
         except Exception as e:
             print(
@@ -642,9 +675,9 @@ def transcribe_audio_book(file_name, audio_duration, user_id):
     response = requests.post(
         root_url + "/api/store-whole-trans",
         data={
-            "user_id": user_id,
-            "audio_book_name": file_name,
             "trans": json.dumps(final_result),
+            "row_id": insert_id,
+            "status": "100"
         },
     )
     if response.status_code == 200:
@@ -652,7 +685,15 @@ def transcribe_audio_book(file_name, audio_duration, user_id):
 
     print("Transcription completed.")
 
-
+# Calculate status function
+def calculate_status(segment_start, audio_duration):
+    progress = (segment_start / audio_duration) * 100
+    if progress < 50:
+        return "In Progress"
+    elif progress >= 50 and progress < 100:
+        return "Almost Complete"
+    else:
+        return "Complete"
 def start_audio_book_queue_processing():
     print("Starting audio book queue processing...")
     while True:
@@ -845,8 +886,8 @@ if __name__ == "__main__":
 
     # socketio.run(app, host="0.0.0.0", port=5111, debug=True)
 
-    # socketio.run(app, host="0.0.0.0", port=5111, debug=True)
-    socketio.run(app, host="0.0.0.0", port=5111, allow_unsafe_werkzeug=True)
+    socketio.run(app, host="0.0.0.0", port=5111, debug=True)
+    # socketio.run(app, host="0.0.0.0", port=5111, allow_unsafe_werkzeug=True)
     # # Allow some time for the SocketIO server to start before running the main Flask app
     # time.sleep(2)
 
