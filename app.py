@@ -416,7 +416,7 @@ def upload():
     res = json.loads(response.text)
 
     trans_id = res["response"]["insert_id"]
-    
+
     print(trans_id)
     api_url = root_url + "/api/check-stored-whole-trans"
     response = requests.post(
@@ -430,7 +430,6 @@ def upload():
 
         res_json = json.loads(res)
 
-        
         result = process_if_found(
             res_json,
             time_stamps,
@@ -441,11 +440,24 @@ def upload():
             captured_time,
         )
         socketio.start_background_task(target=send_transcription, result=result)
-        
 
         return jsonify({"message": "processing Completed!"}), 200
-            
 
+    api_url = root_url + "/api/reserver-whole-trans"
+
+    response = requests.post(
+        api_url,
+        data={
+            "audio_book_name": file_name,
+            "user_id": user_id,
+            "status": "Queue",
+            "time_stamps": time_stamps,
+            "pdf_text": pdf_text,
+            "book_name": book_name,
+        },
+    )
+
+    whole_book_id = response["response"]["insert_id"]
     # Enqueue the processing task
     if(len(time_stamps) != 0):
         task_queue.put(
@@ -465,7 +477,7 @@ def upload():
         )
     audio_book_queue.put(
         lambda: transcribe_audio_book(file_name, audio_duration, user_id, pdf_text,
-        book_name)
+        book_name, whole_book_id)
     )
     return jsonify({"message": "File processing request queued!"}), 200
 
@@ -557,8 +569,9 @@ def process_if_found(
 app.route("/upload", methods=["POST"])(upload)
 
 
-def transcribe_audio_book(file_name, audio_duration, user_id,pdf_text,
-        book_name):
+def transcribe_audio_book(
+    file_name, audio_duration, user_id, pdf_text, book_name, whole_book_id
+):
     file_name = secure_filename(file_name)
     # Convert audio_duration to integer
     audio_duration = int(math.ceil(float(audio_duration)))  # Round float to nearest integer
@@ -572,14 +585,14 @@ def transcribe_audio_book(file_name, audio_duration, user_id,pdf_text,
 
     # Define segment duration (in seconds)
     segment_duration = 50
-    insert_id = None
-    reserver_response = requests.post(
-        root_url + "/api/reserver-whole-trans", data={"audio_book_name": file_name, "pdf_text":pdf_text, "book_name":book_name, "user_id":user_id}
-    )
-    if reserver_response.status_code == 200:
-        # Extract the insert ID from the response JSON
-        response_data = reserver_response.json()
-        insert_id = response_data.get('insert_id')
+    insert_id = whole_book_id
+    # reserver_response = requests.post(
+    #     root_url + "/api/reserver-whole-trans", data={"audio_book_name": file_name, "pdf_text":pdf_text, "book_name":book_name, "user_id":user_id}
+    # )
+    # if reserver_response.status_code == 200:
+    #     # Extract the insert ID from the response JSON
+    #     response_data = reserver_response.json()
+    #     insert_id = response_data.get('insert_id')
     # Create a directory for storing segments if it doesn't exist
     target_path = "./segments"
     if not os.path.exists(target_path):
@@ -630,7 +643,6 @@ def transcribe_audio_book(file_name, audio_duration, user_id,pdf_text,
             "copy",
             segment_file_path
         ]
-        
 
         try:
             subprocess.run(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -648,7 +660,7 @@ def transcribe_audio_book(file_name, audio_duration, user_id,pdf_text,
             reserver_response = requests.post(
                 root_url + "/api/update-status-whole-trans", data={"status": status, "row_id": insert_id}
             )
-
+            print(reserver_response.text)
             # Update segment objects with segment_start value and concatenate text
             for segment in result["segments"]:
                 segment["start"] += segment_start
@@ -684,6 +696,7 @@ def transcribe_audio_book(file_name, audio_duration, user_id,pdf_text,
         print(response.text)
 
     print("Transcription completed.")
+
 
 # Calculate status function
 def calculate_status(segment_start, audio_duration):
