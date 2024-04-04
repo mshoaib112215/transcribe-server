@@ -2,6 +2,7 @@ import datetime
 import json
 import os
 from queue import Queue
+import re
 import psutil
 import math
 import subprocess
@@ -107,40 +108,58 @@ def handle_disconnect():
 
 
 def timestamp_to_seconds(timestamp):
-    print("timestamp", timestamp)
-    time_obj = datetime.datetime.strptime(str(timestamp), "%H:%M:%S")
-    total_seconds = time_obj.hour * 3600 + time_obj.minute * 60 + time_obj.second
-    return total_seconds
+    try:
+        print("timestamp", timestamp)
+        time_obj = datetime.datetime.strptime(str(timestamp), "%H:%M:%S")
+        total_seconds = time_obj.hour * 3600 + time_obj.minute * 60 + time_obj.second
+        return total_seconds
+    except ValueError:
+        # Handle the case when the time string does not match the format
+        return None
+
+
+def extract_time_string(time_str):
+    # Use regular expression to find time string
+    match = re.search(r"(\d{1,2}:\d{1,2}:\d{1,2})", time_str)
+    if match:
+        return match.group(1)
+    else:
+        return None
 
 
 def convert_time_format(time_str, output_format="%H:%M:%S"):
-    # Determine if the time is positive or negative
-    is_negative = False
-    if time_str.startswith("-"):
-        is_negative = True
-        time_str = time_str[1:]
-    elif time_str.startswith("+"):
-        time_str = time_str[1:]
+    # Extract the time string from input
+    if "." in time_str:
+        time_str = time_str.replace(".", ":")
+    extracted_time_str = extract_time_string(time_str)
+    if extracted_time_str:
+        # Determine if the time is positive or negative
+        is_negative = False
+        if extracted_time_str.startswith("-"):
+            is_negative = True
+            extracted_time_str = extracted_time_str[1:]
+        elif extracted_time_str.startswith("+"):
+            extracted_time_str = extracted_time_str[1:]
 
-    # Convert the time string to a timedelta object
-    time_delta = datetime.datetime.strptime(time_str, "%H:%M:%S").time()
+        # Split the time string into its components
+        time_parts = extracted_time_str.split(":")
 
-    # Adjust the timedelta object for negative time
+        # Fill missing components with zeros
+        while len(time_parts) < 3:
+            time_parts.append("0")
 
-    # time_delta = datetime.timedelta(
-    #     hours=time_delta.hour,
-    #     minutes=time_delta.minute,
-    #     seconds=time_delta.second,
-    # )
+        # Convert components to integers
+        hours, minutes, seconds = map(int, time_parts)
 
-    time_delta = datetime.timedelta(
-        hours=time_delta.hour, minutes=time_delta.minute, seconds=time_delta.second
-    )
+        # Create a timedelta object
+        time_delta = datetime.timedelta(hours=hours, minutes=minutes, seconds=seconds)
 
-    # Format the timedelta object using the desired format
-    formatted_time = (datetime.datetime.min + time_delta).time()
+        # Format the timedelta object using the desired format
+        formatted_time = (datetime.datetime.min + time_delta).time()
 
-    return formatted_time.strftime(output_format)
+        return formatted_time.strftime(output_format)
+    else:
+        return None
 
 
 # Function to convert seconds to HH:MM:SS format
@@ -190,6 +209,7 @@ def start_transcription(
                 print("convertion failed: ", ValueError)
                 continue
         else:
+            
             formated_time = convert_time_format(timestamp)
             timetamp_sec = timestamp_to_seconds(formated_time)
 
@@ -457,7 +477,8 @@ def upload():
         },
     )
     
-    whole_book_id = int(response.text)
+    res = json.loads(response.text)
+    whole_book_id = res["response"]["insert_id"]
     
     # Enqueue the processing task
     if(len(time_stamps) != 0):
