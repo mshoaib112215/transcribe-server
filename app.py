@@ -706,16 +706,21 @@ def transcribe_audio_book(
     }
 
     # Store the final result in the database
-    response = requests.post(
-        root_url + "/api/store-whole-trans",
-        data={
-            "trans": json.dumps(final_result),
-            "row_id": insert_id,
-            "status": "100"
-        },
-    )
-    if response.status_code == 200:
-        print(response.text)
+    try:
+        response = requests.post(
+            root_url + "/api/store-whole-trans",
+            data={
+                "trans": json.dumps(final_result),
+                "row_id": insert_id,
+                "status": "100"
+            },
+        )
+        if response.status_code == 200:
+            print(response.text)
+        else:
+            print(f"Error storing whole transcription: {response.status_code} - {response.text}")
+    except Exception as e:
+        print(f"Error storing whole transcription: {e}")
 
     print("Transcription completed.")
 
