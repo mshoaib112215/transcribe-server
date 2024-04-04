@@ -478,8 +478,8 @@ def upload():
     )
     
     res = json.loads(response.text)
-    whole_book_id = res["response"]["insert_id"]
-    
+    whole_book_id = res["insert_id"]
+    print(whole_book_id)    
     # Enqueue the processing task
     if(len(time_stamps) != 0):
         task_queue.put(
