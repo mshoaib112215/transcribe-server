@@ -723,12 +723,8 @@ def transcribe_audio_book(
 # Calculate status function
 def calculate_status(segment_start, audio_duration):
     progress = (segment_start / audio_duration) * 100
-    if progress < 50:
-        return "In Progress"
-    elif progress >= 50 and progress < 100:
-        return "Almost Complete"
-    else:
-        return "Complete"
+    return progress
+    
 def start_audio_book_queue_processing():
     print("Starting audio book queue processing...")
     while True:
