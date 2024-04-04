@@ -677,7 +677,7 @@ def transcribe_audio_book(
         model = whisper.load_model("base")
         try:
             result = model.transcribe(segment_file_path)
-            status = calculate_status(segment_start, audio_duration)
+            status = calculate_status(segment_start, audio_duration, segment_end)
 
             reserver_response = requests.post(
                 root_url + "/api/update-status-whole-trans", data={"status": status, "row_id": insert_id}
@@ -721,8 +721,8 @@ def transcribe_audio_book(
 
 
 # Calculate status function
-def calculate_status(segment_start, audio_duration):
-    progress = (segment_start / audio_duration) * 100
+def calculate_status(segment_start, audio_duration, segment_end):
+    progress = (segment_start + (segment_end - segment_start))/audio_duration * 100
     return progress
     
 def start_audio_book_queue_processing():
