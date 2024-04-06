@@ -127,10 +127,19 @@ def extract_time_string(time_str):
         return None
 
 
+def replace_special_characters(time_str):
+    # Define a regular expression pattern to match special characters
+    pattern = r"[^a-zA-Z0-9\s:]"  # Matches any character that is not alphanumeric, whitespace, or colon
+
+    # Replace special characters with a colon
+    cleaned_time_str = re.sub(pattern, ":", time_str)
+
+    return cleaned_time_str
+
 def convert_time_format(time_str, output_format="%H:%M:%S"):
     # Extract the time string from input
-    if "." in time_str:
-        time_str = time_str.replace(".", ":")
+    time_str = replace_special_characters(time_str)
+
     extracted_time_str = extract_time_string(time_str)
     if extracted_time_str:
         # Determine if the time is positive or negative
@@ -322,7 +331,7 @@ def process_upload(
             if time_stamps_type == "start":
                 starting_timestamp = timetamp_sec
             elif time_stamps_type == "end":
-                timetamp_sec = audio_duration  - timetamp_sec
+                timetamp_sec = audio_duration - timetamp_sec
                
             starting_timestamp = str(timetamp_sec - float(offset))
         else:
