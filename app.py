@@ -322,11 +322,8 @@ def process_upload(
             if time_stamps_type == "start":
                 starting_timestamp = timetamp_sec
             elif time_stamps_type == "end":
-                try:
-                    timetamp_sec = float(audio_duration or 0) - timetamp_sec
-                except ValueError:
-                    print("convertion failed: ", ValueError)
-                    continue
+                timetamp_sec = audio_duration  - timetamp_sec
+               
             starting_timestamp = str(timetamp_sec - float(offset))
         else:
             starting_timestamp = timestamp
