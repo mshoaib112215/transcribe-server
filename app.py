@@ -955,8 +955,8 @@ if __name__ == "__main__":
 
     # socketio.run(app, host="0.0.0.0", port=5111, debug=True)
 
-    socketio.run(app, host="0.0.0.0", port=5111, debug=True)
-    # socketio.run(app, host="0.0.0.0", port=5111, allow_unsafe_werkzeug=True)
+    # socketio.run(app, host="0.0.0.0", port=5111, debug=True)
+    socketio.run(app, host="0.0.0.0", port=5111, allow_unsafe_werkzeug=True)
     # # Allow some time for the SocketIO server to start before running the main Flask app
     # time.sleep(2)
 
