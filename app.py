@@ -6,7 +6,7 @@ import re
 import psutil
 import math
 import subprocess
-from flask import Flask, jsonify, request, Response, render_template
+from flask import Flask, jsonify, request, Response, render_template, send_file
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 import whisper
@@ -215,7 +215,7 @@ def start_transcription(
 
         starting_timestamp_sec = timetamp_sec
         if timeStampsType == "end":
-            starting_timestamp_sec = float(audio_duration) - timetamp_sec
+            starting_timestamp_sec = audio_duration - timetamp_sec
         starting_timestamp = convert_seconds_to_timestamp(
             starting_timestamp_sec - float(offset)
         )
@@ -303,21 +303,30 @@ def process_upload(
 
     for key, timestamp in enumerate(time_stamps_list):
         formated_time = ""
-        timetamp_sec = ""
+        timetamp_sec = None
         starting_timestamp = 0
         if captured_time == "false":
             if not isinstance(timestamp, str) or ":" not in timestamp:
                 try:
                     timetamp_sec = float(timestamp) * 3600
                 except ValueError:
+                    print("convertion failed: ", ValueError)
                     continue
             else:
-                formated_time = convert_time_format(timestamp)
-                timetamp_sec = timestamp_to_seconds(formated_time)
+                try:
+                    formated_time = convert_time_format(timestamp)
+                    timetamp_sec = timestamp_to_seconds(formated_time)
+                except ValueError:
+                    print("convertion failed: ", ValueError)
+                    continue
             if time_stamps_type == "start":
                 starting_timestamp = timetamp_sec
             elif time_stamps_type == "end":
-                timetamp_sec = float(audio_duration) - timetamp_sec
+                try:
+                    timetamp_sec = float(audio_duration or 0) - timetamp_sec
+                except ValueError:
+                    print("convertion failed: ", ValueError)
+                    continue
             starting_timestamp = str(timetamp_sec - float(offset))
         else:
             starting_timestamp = timestamp
@@ -381,10 +390,33 @@ def process_upload(
     print("Book Name:", book_name)
     print("Transcriptions:", transcriptions)
 
+
     # Now, you can make the API call to store transcriptions
 
 
 audio_book_queue = Queue()
+
+
+@app.get("/audio")
+def get_audio():
+    # Path to the audio file on the server
+    audio_file_path = "./temps2/Personal_Memoirs_of_US_Grant.mp3"
+
+    # Send the audio file to the client with streaming enabled
+    return send_file(
+        audio_file_path,
+        as_attachment=True,
+        conditional=True,
+        chunk_size=1024 * 8,
+        mimetype="audio/mpeg",
+        last_modified=None,
+        attachment_filename=None,
+        download_name=None,
+        max_age=None,
+        response_class=None,
+        direct_passthrough=False,
+        
+    )
 
 
 # Function to handle the API upload endpoint
@@ -408,7 +440,6 @@ def upload():
             filename = secure_filename(file.filename)
             file.save(os.path.join("./temps2", filename))
             send_message("message", "File saved successfully")
-
     # Get other form fields
     file_name = request.form.get("fileName")
     time_stamps = request.form.get("timeStamps")
@@ -420,6 +451,8 @@ def upload():
     user_id = request.form.get("userId")
     pdf_text = request.form.get("pdfText")
     book_name = request.form.get("bookName")
+
+    audio_duration = float(audio_duration)
 
     api_url = root_url + "/api/store-trans"
     response = requests.post(
@@ -535,7 +568,7 @@ def process_if_found(
                 if time_stamps_type == "start":
                     starting_timestamp = timestamp_sec
                 elif time_stamps_type == "end":
-                    timestamp_sec = float(audio_duration) - timestamp_sec
+                    timestamp_sec = audio_duration - timestamp_sec
                 starting_timestamp = str(timestamp_sec - float(offset))
             else:
                 starting_timestamp = timestamp
@@ -596,7 +629,7 @@ def transcribe_audio_book(
 ):
     file_name = secure_filename(file_name)
     # Convert audio_duration to integer
-    audio_duration = int(math.ceil(float(audio_duration)))  # Round float to nearest integer
+    # audio_duration = int(math.ceil(float(audio_duration)))  # Round float to nearest integer
 
     # Check if the file is already processed
     response = requests.post(
@@ -628,11 +661,14 @@ def transcribe_audio_book(
 
     # Initialize text for concatenation
     concatenated_text = ""
-    print("file name is in whole trans: " + file_name)
     # Iterate through each segment
     # Set the target directory
 
-    for segment_start in range(0, audio_duration, segment_duration):
+    for segment_start in range(
+        0, int(math.ceil(audio_duration)), segment_duration
+    ):
+        print(f"Starting segment {segment_start} of audio book '{file_name}'")
+        print(f"Audio duration is {audio_duration}")
         # Calculate segment end time
         segment_end = min(segment_start + segment_duration, audio_duration)
 
@@ -682,7 +718,7 @@ def transcribe_audio_book(
             reserver_response = requests.post(
                 root_url + "/api/update-status-whole-trans", data={"status": status, "row_id": insert_id}
             )
-            print(reserver_response.text)
+            print(reserver_response.text)   
             # Update segment objects with segment_start value and concatenate text
             for segment in result["segments"]:
                 segment["start"] += segment_start
@@ -729,14 +765,7 @@ def transcribe_audio_book(
 def calculate_status(segment_start, audio_duration, segment_end):
     progress = (segment_start + (segment_end - segment_start))/audio_duration * 100
     return progress
-    
-def start_audio_book_queue_processing():
-    print("Starting audio book queue processing...")
-    while True:
-        task = audio_book_queue.get()
-        print("Processing audio book...")
-        task()
-        audio_book_queue.task_done()    
+
 
 # Function to limit CPU usage for a thread
 def limit_cpu_usage(thread, limit):
@@ -745,6 +774,13 @@ def limit_cpu_usage(thread, limit):
     p.nice(10) # for linux
     # p.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)  # Lower the priority for windows
 
+def start_audio_book_queue_processing():
+    print("Starting audio book queue processing...")
+    while True:
+        task = audio_book_queue.get()
+        print("Processing audio book...")
+        task()
+        audio_book_queue.task_done()    
 # Start the audio book queue processing thread
 audio_worker = threading.Thread(target=start_audio_book_queue_processing)
 audio_worker.daemon = True
@@ -922,8 +958,8 @@ if __name__ == "__main__":
 
     # socketio.run(app, host="0.0.0.0", port=5111, debug=True)
 
-    # socketio.run(app, host="0.0.0.0", port=5111, debug=True)
-    socketio.run(app, host="0.0.0.0", port=5111, allow_unsafe_werkzeug=True)
+    socketio.run(app, host="0.0.0.0", port=5111, debug=True)
+    # socketio.run(app, host="0.0.0.0", port=5111, allow_unsafe_werkzeug=True)
     # # Allow some time for the SocketIO server to start before running the main Flask app
     # time.sleep(2)
 
